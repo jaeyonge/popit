@@ -67,6 +67,11 @@ export default function ShakeGame({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const objectRef = useRef<HTMLDivElement | null>(null);
 
+  const phaseRef = useRef<GamePhase>("READY");
+  const activePointerIdRef = useRef<number | null>(null);
+  const containerRectRef = useRef<{ left: number; width: number }>({ left: 0, width: 400 });
+  const lastPointerTimeRef = useRef<number>(0);
+
   const isGrippingRef = useRef<boolean>(false);
   const pointerXRef = useRef<number>(0.5); // normalized 0.0 ~ 1.0
   const objectXRef = useRef<number>(0.5);
@@ -99,17 +104,22 @@ export default function ShakeGame({
     };
   }, [campaign.dropAssetUrl]);
 
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
   // Tab visibility detection (PRD Section 35)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.hidden && phase === "PLAYING") {
+      if (document.hidden && phaseRef.current === "PLAYING") {
         setDisqualifiedMsg("화면을 벗어나 기록이 저장되지 않았어요.");
+        phaseRef.current = "ENDED";
         setPhase("ENDED");
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [phase]);
+  }, []);
 
   // Audio mute toggle
   const toggleMute = () => {
@@ -152,6 +162,26 @@ export default function ShakeGame({
     }, 450);
   };
 
+  // Cache container dimensions on mount and resize to avoid layout thrashing
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        containerRectRef.current = {
+          left: rect.left,
+          width: rect.width || window.innerWidth || 400,
+        };
+      }
+    };
+    updateDimensions();
+    window.addEventListener("resize", updateDimensions);
+    window.addEventListener("orientationchange", updateDimensions);
+    return () => {
+      window.removeEventListener("resize", updateDimensions);
+      window.removeEventListener("orientationchange", updateDimensions);
+    };
+  }, []);
+
   // Spring & Inertia Animation Loop (PRD Section 17 & 32: elapsed time based)
   useEffect(() => {
     let animId: number;
@@ -161,10 +191,10 @@ export default function ShakeGame({
       const dt = Math.min((time - lastTime) / 1000, 0.05);
       lastTime = time;
 
-      // Spring tracking target pointerX
+      // Responsive spring tracking target pointerX (k=55, damping=12 for responsive mobile tracking)
       const targetX = isGrippingRef.current ? pointerXRef.current : 0.5;
-      const k = 28; // spring stiffness
-      const damping = 9; // damping factor
+      const k = 55; // spring stiffness
+      const damping = 12; // damping factor
 
       const force = (targetX - objectXRef.current) * k;
       objectVelocityRef.current = (objectVelocityRef.current + force * dt) * Math.exp(-damping * dt);
@@ -174,11 +204,11 @@ export default function ShakeGame({
       const targetRotation = -objectVelocityRef.current * 42; // degrees
       objectRotationRef.current += (targetRotation - objectRotationRef.current) * Math.min(dt * 15, 1);
 
-      // Apply transform to DOM element
-      if (objectRef.current && containerRef.current) {
-        const containerWidth = containerRef.current.clientWidth;
+      // Apply transform to DOM element using cached width and translate3d (zero layout thrashing)
+      if (objectRef.current) {
+        const containerWidth = containerRectRef.current.width;
         const pixelOffset = (objectXRef.current - 0.5) * containerWidth;
-        objectRef.current.style.transform = `translateX(${pixelOffset}px) rotate(${objectRotationRef.current}deg)`;
+        objectRef.current.style.transform = `translate3d(${pixelOffset}px, 0, 0) rotate(${objectRotationRef.current}deg)`;
       }
 
       animId = requestAnimationFrame(updatePhysics);
@@ -289,9 +319,9 @@ export default function ShakeGame({
   // Pointer Movement & Reversal Math (PRD Section 7, 8, 9)
   const handlePointerMove = useCallback(
     (clientX: number) => {
-      if (!containerRef.current || phase !== "PLAYING") return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const normalizedX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      if (phaseRef.current !== "PLAYING") return;
+      const { left, width } = containerRectRef.current;
+      const normalizedX = Math.max(0, Math.min(1, (clientX - left) / (width || 400)));
       const now = performance.now();
       const relativeTime = now - gameStartTimestampRef.current;
 
@@ -299,12 +329,15 @@ export default function ShakeGame({
       pointerXRef.current = normalizedX;
 
       const deltaX = normalizedX - prevX;
-      const dt = Math.max((now - reversalStartTimeRef.current) / 1000, 0.001);
+      const prevPointerTime = lastPointerTimeRef.current || now;
+      const pointerDt = Math.max((now - prevPointerTime) / 1000, 0.001);
+      lastPointerTimeRef.current = now;
 
-      if (Math.abs(deltaX) < 0.002) return; // ignore micro-jitter
+      if (Math.abs(deltaX) < 0.0015) return; // ignore micro-jitter
 
       const currentDir = deltaX > 0 ? "right" : "left";
-      const instantVelocity = Math.abs(deltaX) / (dt || 0.016);
+      // Compute true instantaneous velocity based on inter-pointer event delta
+      const instantVelocity = Math.abs(deltaX) / pointerDt;
       if (instantVelocity > reversalPeakVelRef.current) {
         reversalPeakVelRef.current = instantVelocity;
       }
@@ -343,14 +376,20 @@ export default function ShakeGame({
 
       lastDirectionRef.current = currentDir;
     },
-    [phase, handleScoredReversal]
+    [handleScoredReversal]
   );
 
   // Hold to Start logic (PRD Section 5)
   const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const startHoldCountdown = () => {
-    if (phase !== "READY" || !assetLoaded) return;
+    if (phaseRef.current !== "READY" || !assetLoaded) return;
+    if (holdTimeoutRef.current) {
+      clearInterval(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+
+    phaseRef.current = "COUNTDOWN";
     setPhase("COUNTDOWN");
     setCountdown(3);
 
@@ -360,7 +399,10 @@ export default function ShakeGame({
       if (count > 0) {
         setCountdown(count);
       } else {
-        clearInterval(interval);
+        if (holdTimeoutRef.current) {
+          clearInterval(holdTimeoutRef.current);
+          holdTimeoutRef.current = null;
+        }
         startGame();
       }
     }, 850);
@@ -368,8 +410,12 @@ export default function ShakeGame({
   };
 
   const cancelHoldCountdown = () => {
-    if (phase === "COUNTDOWN") {
-      if (holdTimeoutRef.current) clearInterval(holdTimeoutRef.current);
+    if (holdTimeoutRef.current) {
+      clearInterval(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+    if (phaseRef.current === "COUNTDOWN") {
+      phaseRef.current = "READY";
       setPhase("READY");
       setCountdown(3);
     }
@@ -377,6 +423,11 @@ export default function ShakeGame({
 
   // Start actual 15.0s game session
   const startGame = async () => {
+    if (holdTimeoutRef.current) {
+      clearInterval(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+    phaseRef.current = "PLAYING";
     setPhase("PLAYING");
     setTimeLeft(15.0);
     setScore(0);
@@ -386,6 +437,10 @@ export default function ShakeGame({
     validShakeCounterRef.current = 0;
     consecutiveGoodPerfectRef.current = 0;
     lastScoredTimeRef.current = 0;
+    reversalStartXRef.current = pointerXRef.current;
+    reversalStartTimeRef.current = performance.now();
+    lastPointerTimeRef.current = performance.now();
+    reversalPeakVelRef.current = 0;
     gameStartTimestampRef.current = performance.now();
 
     // Create session on server
@@ -428,6 +483,7 @@ export default function ShakeGame({
 
   // End Game and Submit to server (PRD Section 23 & 33)
   const endGame = async () => {
+    phaseRef.current = "ENDED";
     setPhase("ENDED");
     sounds.playTimeUp();
 
@@ -485,25 +541,51 @@ export default function ShakeGame({
       ref={containerRef}
       className="relative flex min-h-screen w-full flex-col items-center justify-between overflow-hidden px-4 py-6 font-sans text-white select-none touch-none"
       onPointerDown={(e) => {
+        // Multi-touch guard: lock onto the first pointer
+        if (activePointerIdRef.current !== null) return;
+        activePointerIdRef.current = e.pointerId;
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch (err) {
+          // pointer capture unsupported or failed
+        }
+
         isGrippingRef.current = true;
-        if (phase === "READY") {
+        if (phaseRef.current === "READY") {
           startHoldCountdown();
         }
       }}
       onPointerMove={(e) => {
+        if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
         if (isGrippingRef.current) {
           handlePointerMove(e.clientX);
         }
       }}
-      onPointerUp={() => {
+      onPointerUp={(e) => {
+        if (activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
+          activePointerIdRef.current = null;
+          try {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+          } catch (err) {}
+        }
         isGrippingRef.current = false;
-        if (phase === "COUNTDOWN") {
+        if (phaseRef.current === "COUNTDOWN") {
           cancelHoldCountdown();
         }
       }}
-      onPointerCancel={() => {
+      onPointerCancel={(e) => {
+        if (activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
+          activePointerIdRef.current = null;
+          try {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+          } catch (err) {}
+        }
         isGrippingRef.current = false;
-        if (phase === "COUNTDOWN") {
+        if (phaseRef.current === "COUNTDOWN") {
           cancelHoldCountdown();
         }
       }}
@@ -630,7 +712,7 @@ export default function ShakeGame({
         {/* Shake Object Wrapper */}
         <div
           ref={objectRef}
-          className="relative cursor-grab active:cursor-grabbing transition-transform will-change-transform select-none"
+          className="relative cursor-grab active:cursor-grabbing will-change-transform select-none"
           style={{ touchAction: "none" }}
         >
           <div className="relative flex flex-col items-center">

@@ -30,38 +30,47 @@ export default function DropCanvas({ dropAssetUrl, itemsRef }: DropCanvasProps) 
 
     let animId: number;
     let lastTime = performance.now();
+    let width = window.innerWidth;
+    let height = window.innerHeight;
 
     const resize = () => {
       if (!canvas) return;
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      width = window.innerWidth;
+      height = window.innerHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.scale(dpr, dpr);
     };
 
     resize();
     window.addEventListener("resize", resize);
 
     const render = (time: number) => {
-      const dt = Math.min((time - lastTime) / 1000, 0.05); // cap delta time
+      const dt = Math.min((time - lastTime) / 1000, 0.04);
       lastTime = time;
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, width, height);
 
       const particles = itemsRef.current;
+      // Cap max particles for 60fps mobile budget (PRD Section 48)
+      if (particles.length > 25) {
+        particles.splice(0, particles.length - 25);
+      }
+
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
 
-        // Physics: gravity + velocity
         p.vy += 1200 * dt; // gravity
         p.x += p.vx * dt;
         p.y += p.vy * dt;
         p.rotation += p.vRot * dt;
 
-        // Fade out as it falls below viewport
-        if (p.y > canvas.height - 50) {
-          p.alpha -= 1.8 * dt;
+        if (p.y > height - 50) {
+          p.alpha -= 2.5 * dt;
         }
 
-        if (p.alpha <= 0 || p.y > canvas.height + 150) {
+        if (p.alpha <= 0 || p.y > height + 100) {
           particles.splice(i, 1);
           continue;
         }
@@ -71,11 +80,11 @@ export default function DropCanvas({ dropAssetUrl, itemsRef }: DropCanvasProps) 
         ctx.translate(p.x, p.y);
         ctx.rotate(p.rotation);
 
-        const size = 64 * p.scale;
+        const size = 52 * p.scale;
         try {
           ctx.drawImage(p.image, -size / 2, -size / 2, size, size);
         } catch (e) {
-          // ignore drawing issue if image loading
+          // ignore
         }
         ctx.restore();
       }
