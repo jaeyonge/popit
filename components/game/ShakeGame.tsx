@@ -43,7 +43,6 @@ export default function ShakeGame({
   // Game state
   const [phase, setPhase] = useState<GamePhase>("READY");
   const [countdown, setCountdown] = useState<number>(3);
-  const [timeLeft, setTimeLeft] = useState<number>(15.0);
   const [score, setScore] = useState<number>(0);
   const [combo, setCombo] = useState<number>(0);
   const [isFever, setIsFever] = useState<boolean>(false);
@@ -66,6 +65,7 @@ export default function ShakeGame({
   // Physics & Shake Tracking
   const containerRef = useRef<HTMLDivElement | null>(null);
   const objectRef = useRef<HTMLDivElement | null>(null);
+  const timerTextRef = useRef<HTMLDivElement | null>(null);
 
   const phaseRef = useRef<GamePhase>("READY");
   const activePointerIdRef = useRef<number | null>(null);
@@ -191,18 +191,24 @@ export default function ShakeGame({
       const dt = Math.min((time - lastTime) / 1000, 0.05);
       lastTime = time;
 
-      // Responsive spring tracking target pointerX (k=55, damping=12 for responsive mobile tracking)
-      const targetX = isGrippingRef.current ? pointerXRef.current : 0.5;
-      const k = 55; // spring stiffness
-      const damping = 12; // damping factor
+      if (isGrippingRef.current) {
+        // Direct responsive tracking with rapid exponential catch-up (zero sluggish delay)
+        const lerpFactor = 1 - Math.exp(-60 * dt);
+        const prevX = objectXRef.current;
+        objectXRef.current += (pointerXRef.current - objectXRef.current) * lerpFactor;
+        objectVelocityRef.current = (objectXRef.current - prevX) / Math.max(dt, 0.001);
+      } else {
+        // Smooth natural spring back to center when finger is released
+        const springK = 35;
+        const damping = 10;
+        const force = (0.5 - objectXRef.current) * springK;
+        objectVelocityRef.current = (objectVelocityRef.current + force * dt) * Math.exp(-damping * dt);
+        objectXRef.current += objectVelocityRef.current * dt;
+      }
 
-      const force = (targetX - objectXRef.current) * k;
-      objectVelocityRef.current = (objectVelocityRef.current + force * dt) * Math.exp(-damping * dt);
-      objectXRef.current += objectVelocityRef.current * dt;
-
-      // Dynamic tilt rotation based on velocity (PRD Section 17: spring & inertia)
-      const targetRotation = -objectVelocityRef.current * 42; // degrees
-      objectRotationRef.current += (targetRotation - objectRotationRef.current) * Math.min(dt * 15, 1);
+      // Dynamic tilt rotation based on velocity, clamped between -35 and +35 deg
+      const targetRotation = Math.max(-35, Math.min(35, -objectVelocityRef.current * 18));
+      objectRotationRef.current += (targetRotation - objectRotationRef.current) * Math.min(dt * 20, 1);
 
       // Apply transform to DOM element using cached width and translate3d (zero layout thrashing)
       if (objectRef.current) {
@@ -379,14 +385,14 @@ export default function ShakeGame({
     [handleScoredReversal]
   );
 
-  // Hold to Start logic (PRD Section 5)
-  const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Auto Countdown to Start logic
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const startHoldCountdown = () => {
+  const startCountdown = () => {
     if (phaseRef.current !== "READY" || !assetLoaded) return;
-    if (holdTimeoutRef.current) {
-      clearInterval(holdTimeoutRef.current);
-      holdTimeoutRef.current = null;
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
     }
 
     phaseRef.current = "COUNTDOWN";
@@ -399,37 +405,27 @@ export default function ShakeGame({
       if (count > 0) {
         setCountdown(count);
       } else {
-        if (holdTimeoutRef.current) {
-          clearInterval(holdTimeoutRef.current);
-          holdTimeoutRef.current = null;
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
         }
         startGame();
       }
     }, 850);
-    holdTimeoutRef.current = interval as unknown as NodeJS.Timeout;
-  };
-
-  const cancelHoldCountdown = () => {
-    if (holdTimeoutRef.current) {
-      clearInterval(holdTimeoutRef.current);
-      holdTimeoutRef.current = null;
-    }
-    if (phaseRef.current === "COUNTDOWN") {
-      phaseRef.current = "READY";
-      setPhase("READY");
-      setCountdown(3);
-    }
+    countdownIntervalRef.current = interval as unknown as NodeJS.Timeout;
   };
 
   // Start actual 15.0s game session
   const startGame = async () => {
-    if (holdTimeoutRef.current) {
-      clearInterval(holdTimeoutRef.current);
-      holdTimeoutRef.current = null;
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
     }
     phaseRef.current = "PLAYING";
     setPhase("PLAYING");
-    setTimeLeft(15.0);
+    if (timerTextRef.current) {
+      timerTextRef.current.textContent = "15.0s";
+    }
     setScore(0);
     setCombo(0);
     setIsFever(false);
@@ -463,14 +459,16 @@ export default function ShakeGame({
     }
   };
 
-  // 15.0s Game Timer (PRD Section 6.1)
+  // 15.0s Game Timer (Zero React re-render overhead on 60fps game loop)
   useEffect(() => {
     if (phase !== "PLAYING") return;
 
     const timer = setInterval(() => {
       const elapsed = (performance.now() - gameStartTimestampRef.current) / 1000;
       const remaining = Math.max(0, 15.0 - elapsed);
-      setTimeLeft(remaining);
+      if (timerTextRef.current) {
+        timerTextRef.current.textContent = remaining.toFixed(1) + "s";
+      }
 
       if (remaining <= 0) {
         clearInterval(timer);
@@ -541,28 +539,27 @@ export default function ShakeGame({
       ref={containerRef}
       className="relative flex min-h-screen w-full flex-col items-center justify-between overflow-hidden px-4 py-6 font-sans text-white select-none touch-none"
       onPointerDown={(e) => {
-        // Multi-touch guard: lock onto the first pointer
-        if (activePointerIdRef.current !== null) return;
+        if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
         activePointerIdRef.current = e.pointerId;
         try {
           e.currentTarget.setPointerCapture(e.pointerId);
-        } catch (err) {
-          // pointer capture unsupported or failed
-        }
+        } catch (err) {}
 
         isGrippingRef.current = true;
-        if (phaseRef.current === "READY") {
-          startHoldCountdown();
+        if (phaseRef.current === "PLAYING") {
+          const { left, width } = containerRectRef.current;
+          pointerXRef.current = Math.max(0, Math.min(1, (e.clientX - left) / (width || 400)));
+          lastPointerTimeRef.current = performance.now();
         }
       }}
       onPointerMove={(e) => {
         if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
-        if (isGrippingRef.current) {
+        if (isGrippingRef.current && phaseRef.current === "PLAYING") {
           handlePointerMove(e.clientX);
         }
       }}
       onPointerUp={(e) => {
-        if (activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
+        if (activePointerIdRef.current === e.pointerId) {
           activePointerIdRef.current = null;
           try {
             if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -571,12 +568,9 @@ export default function ShakeGame({
           } catch (err) {}
         }
         isGrippingRef.current = false;
-        if (phaseRef.current === "COUNTDOWN") {
-          cancelHoldCountdown();
-        }
       }}
       onPointerCancel={(e) => {
-        if (activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
+        if (activePointerIdRef.current === e.pointerId) {
           activePointerIdRef.current = null;
           try {
             if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -585,9 +579,6 @@ export default function ShakeGame({
           } catch (err) {}
         }
         isGrippingRef.current = false;
-        if (phaseRef.current === "COUNTDOWN") {
-          cancelHoldCountdown();
-        }
       }}
     >
       {/* 60FPS Drop Canvas */}
@@ -665,8 +656,11 @@ export default function ShakeGame({
             </div>
 
             {/* 15.0s Accurate Timer (PRD Section 6.1) */}
-            <div className="rounded-full bg-black/40 px-3.5 py-1 text-base font-mono font-bold tracking-tight text-white border border-white/10 backdrop-blur-md">
-              {timeLeft.toFixed(1)}s
+            <div
+              ref={timerTextRef}
+              className="rounded-full bg-black/40 px-3.5 py-1 text-base font-mono font-bold tracking-tight text-white border border-white/10 backdrop-blur-md"
+            >
+              15.0s
             </div>
           </div>
         )}
@@ -722,7 +716,7 @@ export default function ShakeGame({
               width={340}
               height={340}
               priority
-              className="max-h-[50vh] w-auto object-contain drop-shadow-[0_20px_35px_rgba(0,0,0,0.7)] pointer-events-none"
+              className="max-h-[50vh] w-auto object-contain drop-shadow-[0_10px_15px_rgba(0,0,0,0.35)] pointer-events-none"
             />
           </div>
         </div>
@@ -733,8 +727,8 @@ export default function ShakeGame({
             <span className="text-7xl font-black text-yellow-300 animate-ping">
               {countdown}
             </span>
-            <span className="mt-4 text-sm font-bold text-gray-300">
-              손을 떼면 취소돼요!
+            <span className="mt-4 text-base font-bold text-gray-200">
+              준비하세요!
             </span>
           </div>
         )}
@@ -758,18 +752,22 @@ export default function ShakeGame({
         )}
       </div>
 
-      {/* Bottom CTA / Status Area (PRD Section 5: HOLD TO START) */}
+      {/* Bottom CTA / Status Area */}
       <div className="z-30 mb-4 flex w-full max-w-sm flex-col items-center gap-3">
         {phase === "READY" && (
-          <div className="flex flex-col items-center gap-2">
-            <div className="flex items-center gap-2 rounded-full bg-white/10 px-5 py-2.5 backdrop-blur-md border border-white/20 animate-bounce-short">
-              <span className="h-2 w-2 rounded-full bg-green-400 animate-ping" />
-              <span className="text-sm font-black tracking-wide text-white uppercase">
-                HOLD TO START
-              </span>
-            </div>
+          <div className="flex flex-col items-center gap-2.5">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                startCountdown();
+              }}
+              className="flex items-center gap-2.5 rounded-full bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 px-9 py-3.5 text-base font-black tracking-wider text-black shadow-[0_0_30px_rgba(251,191,36,0.6)] transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            >
+              <span className="h-2.5 w-2.5 rounded-full bg-red-600 animate-ping" />
+              <span>게임 시작</span>
+            </button>
             <p className="text-xs text-gray-400 text-center">
-              사물을 누르고 있으면 3초 카운트다운 후 시작됩니다
+              버튼을 누르면 3초 카운트다운 후 시작됩니다
             </p>
           </div>
         )}
