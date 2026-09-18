@@ -1,0 +1,141 @@
+{
+  "campaigns": [
+    {
+      "id": "camp_oreo_bts_today",
+      "date": "2026-09-19",
+      "sponsorName": "동서식품 OREO",
+      "objectName": "오레오 BTS 호떡맛",
+      "objectAssetUrl": "/assets/oreo_box.png",
+      "dropItemName": "BTS 오레오",
+      "dropAssetUrl": "/assets/oreo_cookie.png",
+      "ctaLabel": "오레오 X BTS 에디션 알아보기",
+      "ctaUrl": "https://www.google.com/search?q=oreo+bts+edition",
+      "campaignType": "SPONSORED",
+      "status": "LIVE",
+      "reviewedBy": "Popit Chief Admin",
+      "approvedAt": "2026-09-18T15:59:19.836Z"
+    },
+    {
+      "id": "camp_fallback_popcorn",
+      "date": "2026-09-19",
+      "sponsorName": "Popit",
+      "objectName": "팝콘 버킷",
+      "objectAssetUrl": "/assets/oreo_box.png",
+      "dropItemName": "팝콘",
+      "dropAssetUrl": "/assets/oreo_cookie.png",
+      "ctaLabel": "Popit 둘러보기",
+      "ctaUrl": "https://popit.game",
+      "campaignType": "ORGANIC",
+      "status": "SCHEDULED",
+      "reviewedBy": "System",
+      "approvedAt": "2026-09-18T15:59:19.836Z"
+    }
+  ],
+  "players": {
+    "player_sample_1": {
+      "id": "player_sample_1",
+      "nickname": "보라빛쿠키",
+      "createdAt": "2026-09-18T00:00:00Z"
+    },
+    "player_sample_2": {
+      "id": "player_sample_2",
+      "nickname": "빛의속도쉐이커",
+      "createdAt": "2026-09-18T00:10:00Z"
+    },
+    "player_sample_3": {
+      "id": "player_sample_3",
+      "nickname": "흔들림없는자",
+      "createdAt": "2026-09-18T00:20:00Z"
+    },
+    "player_sample_4": {
+      "id": "player_sample_4",
+      "nickname": "달콤한호떡",
+      "createdAt": "2026-09-18T01:00:00Z"
+    },
+    "player_sample_5": {
+      "id": "player_sample_5",
+      "nickname": "스피드마스터",
+      "createdAt": "2026-09-18T02:00:00Z"
+    }
+  },
+  "sessions": {
+    "sess_7b75ed4b13a1454c8ab01b4ef1ad1e2d": {
+      "id": "sess_7b75ed4b13a1454c8ab01b4ef1ad1e2d",
+      "playerId": "player_mpiugz03pu",
+      "campaignId": "camp_oreo_bts_today",
+      "scoringConfigVersion": 1,
+      "jackpotIndex": 12,
+      "signedToken": "66d971d7a13b591cf7284534f2fc2f9b46921b968dbecda0a9b25c858ea8b402",
+      "startedAt": "2026-09-18T16:06:04.084Z",
+      "status": "COMPLETED",
+      "submittedAt": "2026-09-18T16:06:19.091Z"
+    }
+  },
+  "results": [
+    {
+      "sessionId": "sess_7b75ed4b13a1454c8ab01b4ef1ad1e2d",
+      "playerId": "player_mpiugz03pu",
+      "campaignId": "camp_oreo_bts_today",
+      "score": 183,
+      "validCount": 15,
+      "goodCount": 17,
+      "perfectCount": 31,
+      "feverCount": 6,
+      "jackpotCount": 1,
+      "verified": true,
+      "submittedAt": "2026-09-18T16:06:19.091Z"
+    }
+  ],
+  "leaderboards": {
+    "2026-09-19": [
+      {
+        "campaignId": "camp_oreo_bts_today",
+        "playerId": "player_mpiugz03pu",
+        "nickname": "익명의 쉐이커",
+        "bestScore": 183,
+        "achievedAt": "2026-09-18T16:06:19.091Z"
+      },
+      {
+        "campaignId": "camp_oreo_bts_today",
+        "playerId": "player_sample_1",
+        "nickname": "보라빛쿠키",
+        "bestScore": 114,
+        "achievedAt": "2026-09-18T09:12:00Z"
+      },
+      {
+        "campaignId": "camp_oreo_bts_today",
+        "playerId": "player_sample_2",
+        "nickname": "빛의속도쉐이커",
+        "bestScore": 108,
+        "achievedAt": "2026-09-18T10:05:00Z"
+      },
+      {
+        "campaignId": "camp_oreo_bts_today",
+        "playerId": "player_sample_3",
+        "nickname": "흔들림없는자",
+        "bestScore": 99,
+        "achievedAt": "2026-09-18T11:20:00Z"
+      },
+      {
+        "campaignId": "camp_oreo_bts_today",
+        "playerId": "player_sample_4",
+        "nickname": "달콤한호떡",
+        "bestScore": 92,
+        "achievedAt": "2026-09-18T12:00:00Z"
+      },
+      {
+        "campaignId": "camp_oreo_bts_today",
+        "playerId": "player_sample_5",
+        "nickname": "스피드마스터",
+        "bestScore": 84,
+        "achievedAt": "2026-09-18T13:15:00Z"
+      }
+    ]
+  },
+  "globalDrops": {
+    "2026-09-19": 1249103
+  },
+  "ctaClicks": {
+    "camp_oreo_bts_today": 343
+  }
+}
