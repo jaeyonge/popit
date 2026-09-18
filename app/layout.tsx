@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://popit.game"),
   title: "Popit — 매일 새로운 사물을 흔들어라!",
   description: "15초 동안 사물을 잡고 흔들어 아이템을 최대한 많이 떨어뜨리세요. Zero-friction Daily Shake Game.",
   openGraph: {

@@ -69,8 +69,6 @@ interface DatabaseSchema {
   ctaClicks: Record<string, number>; // campaignId -> clicks
 }
 
-const DB_PATH = path.join(process.cwd(), "data", "popit_db.json");
-
 // Helper to format Korea Date YYYY-MM-DD
 export function getSeoulToday(): string {
   const now = new Date();
